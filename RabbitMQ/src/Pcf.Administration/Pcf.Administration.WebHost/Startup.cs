@@ -10,6 +10,7 @@ using Pcf.Administration.DataAccess.Repositories;
 using Pcf.Administration.DataAccess.Data;
 using Pcf.Administration.Core.Abstractions.Repositories;
 using System;
+using MassTransit;
 
 namespace Pcf.Administration.WebHost
 {
@@ -26,6 +27,30 @@ namespace Pcf.Administration.WebHost
         // For more information on how to configure your application, visit https://go.microsoft.com/fwlink/?LinkID=398940
         public void ConfigureServices(IServiceCollection services)
         {
+            services.AddMassTransit(x =>
+            {
+                x.AddConsumer<PromoCodeReceivedConsumer>();
+
+                x.UsingRabbitMq((context, cfg) =>
+                {
+                    cfg.Host("localhost", "/", h =>
+                    {
+                        h.Username("guest");
+                        h.Password("guest");
+                    });
+                    
+                    cfg.ReceiveEndpoint("promo-code-received-queue", e =>
+                    {
+                        e.ConfigureConsumer<PromoCodeReceivedConsumer>(context);
+                    });
+                });
+            });
+
+            services.AddMassTransitHostedService();
+
+            // Регистрация consumer'ов
+            services.AddScoped<PromoCodeReceivedConsumer>();
+
             services.AddControllers().AddMvcOptions(x =>
                 x.SuppressAsyncSuffixInActionNames = false);
             services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));

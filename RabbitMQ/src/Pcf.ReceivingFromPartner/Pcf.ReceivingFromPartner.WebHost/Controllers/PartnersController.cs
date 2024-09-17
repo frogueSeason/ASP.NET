@@ -8,6 +8,7 @@ using Pcf.ReceivingFromPartner.Core.Domain;
 using Pcf.ReceivingFromPartner.Core.Abstractions.Gateways;
 using Pcf.ReceivingFromPartner.WebHost.Models;
 using Pcf.ReceivingFromPartner.WebHost.Mappers;
+using MassTransit;
 
 namespace Pcf.ReceivingFromPartner.WebHost.Controllers
 {
@@ -22,20 +23,17 @@ namespace Pcf.ReceivingFromPartner.WebHost.Controllers
         private readonly IRepository<Partner> _partnersRepository;
         private readonly IRepository<Preference> _preferencesRepository;
         private readonly INotificationGateway _notificationGateway;
-        private readonly IGivingPromoCodeToCustomerGateway _givingPromoCodeToCustomerGateway;
-        private readonly IAdministrationGateway _administrationGateway;
+        private readonly IPublishEndpoint _publishEndpoint;
 
         public PartnersController(IRepository<Partner> partnersRepository,
             IRepository<Preference> preferencesRepository,
             INotificationGateway notificationGateway,
-            IGivingPromoCodeToCustomerGateway givingPromoCodeToCustomerGateway,
-            IAdministrationGateway administrationGateway)
+            IPublishEndpoint publishEndpoint)
         {
             _partnersRepository = partnersRepository;
             _preferencesRepository = preferencesRepository;
             _notificationGateway = notificationGateway;
-            _givingPromoCodeToCustomerGateway = givingPromoCodeToCustomerGateway;
-            _administrationGateway = administrationGateway;
+            _publishEndpoint = publishEndpoint;
         }
 
         /// <summary>
@@ -289,7 +287,7 @@ namespace Pcf.ReceivingFromPartner.WebHost.Controllers
         /// <returns></returns>
         [HttpPost("{id:guid}/promocodes")]
         public async Task<IActionResult> ReceivePromoCodeFromPartnerWithPreferenceAsync(Guid id,
-            ReceivingPromoCodeRequest request)
+    ReceivingPromoCodeRequest request)
         {
             var partner = await _partnersRepository.GetByIdAsync(id);
 
@@ -300,12 +298,12 @@ namespace Pcf.ReceivingFromPartner.WebHost.Controllers
 
             var activeLimit = partner.PartnerLimits.FirstOrDefault(x
                 => !x.CancelDate.HasValue && x.EndDate > DateTime.Now);
-
+            /*
             if (activeLimit == null)
             {
                 return BadRequest("Нет доступного лимита на предоставление промокодов");
             }
-
+            */
             if (partner.NumberIssuedPromoCodes + 1 > activeLimit.Limit)
             {
                 return BadRequest("Лимит на выдачу промокодов превышен");
@@ -316,7 +314,6 @@ namespace Pcf.ReceivingFromPartner.WebHost.Controllers
                 return BadRequest("Данный промокод уже был выдан ранее");
             }
 
-            //Получаем предпочтение по имени
             var preference = await _preferencesRepository.GetByIdAsync(request.PreferenceId);
 
             if (preference == null)
@@ -330,17 +327,18 @@ namespace Pcf.ReceivingFromPartner.WebHost.Controllers
 
             await _partnersRepository.UpdateAsync(partner);
 
-            //TODO: Чтобы информация о том, что промокод был выдан парнером была отправлена
-            //в микросервис рассылки клиентам нужно либо вызвать его API, либо отправить событие в очередь
-            await _givingPromoCodeToCustomerGateway.GivePromoCodeToCustomer(promoCode);
-
-            //TODO: Чтобы информация о том, что промокод был выдан парнером была отправлена
-            //в микросервис администрирования нужно либо вызвать его API, либо отправить событие в очередь
-
-            if (request.PartnerManagerId.HasValue)
+            // Создаем событие для отправки в RabbitMQ
+            var promoCodeEvent = new PromoCodeReceivedEvent
             {
-                await _administrationGateway.NotifyAdminAboutPartnerManagerPromoCode(request.PartnerManagerId.Value);
-            }
+                PromoCode = promoCode.Code,
+                PartnerId = promoCode.PartnerId,
+                PartnerManagerId = promoCode.PartnerManagerId,
+                IssuedDate = DateTime.UtcNow,
+                PreferenceId = promoCode.PreferenceId
+            };
+
+            // Отправляем событие в RabbitMQ
+            await _publishEndpoint.Publish(promoCodeEvent);
 
             return CreatedAtAction(nameof(GetPartnerPromoCodeAsync),
                 new { id = partner.Id, promoCodeId = promoCode.Id }, null);
