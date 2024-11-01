@@ -50,6 +50,10 @@ namespace PromoCodeFactory.DataAccess.Repositories
         {
             await _dataContext.SaveChangesAsync();
         }
+        public async Task SaveChangesAsync()
+        {
+            await _dataContext.SaveChangesAsync();
+        }
 
         public async Task DeleteAsync(T entity)
         {

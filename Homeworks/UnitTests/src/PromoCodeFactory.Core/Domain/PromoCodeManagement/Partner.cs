@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace PromoCodeFactory.Core.Domain.PromoCodeManagement
 {
@@ -13,5 +14,8 @@ namespace PromoCodeFactory.Core.Domain.PromoCodeManagement
         public bool IsActive { get; set; }
 
         public virtual ICollection<PartnerPromoCodeLimit> PartnerLimits { get; set; }
+
+        public PartnerPromoCodeLimit CurrentLimit =>
+            PartnerLimits?.FirstOrDefault(limit => limit.IsActive);
     }
 }

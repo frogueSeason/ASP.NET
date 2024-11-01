@@ -5,6 +5,7 @@ namespace PromoCodeFactory.Core.Domain.PromoCodeManagement
     public class PartnerPromoCodeLimit
     {
         public Guid Id { get; set; }
+        public bool IsActive => !CancelDate.HasValue;
 
         public Guid PartnerId { get; set; }
 
